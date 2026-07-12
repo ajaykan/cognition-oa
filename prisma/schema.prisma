@@ -1,0 +1,88 @@
+// Internal Tools Platform — data model
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  kyc_reviewer
+  support_agent
+}
+
+enum KycStatus {
+  pending
+  approved
+  rejected
+  escalated
+}
+
+enum RefundStatus {
+  pending
+  approved
+  denied
+}
+
+model User {
+  id    String @id @default(cuid())
+  name  String
+  email String @unique
+  role  Role
+
+  kycDecisions    KycApplication[] @relation("KycDecidedBy")
+  refundDecisions RefundRequest[]  @relation("RefundDecidedBy")
+  auditLogs       AuditLog[]       @relation("AuditActor")
+}
+
+model KycApplication {
+  id             String    @id @default(cuid())
+  applicantName  String
+  email          String
+  country        String
+  riskScore      Int
+  riskFlags      String    @default("[]") // JSON array of strings
+  status         KycStatus @default(pending)
+  submittedAt    DateTime  @default(now())
+  decidedAt      DateTime?
+  decidedById    String?
+  decidedBy      User?     @relation("KycDecidedBy", fields: [decidedById], references: [id])
+  decisionReason String?
+}
+
+model RefundRequest {
+  id           String       @id @default(cuid())
+  customerName String
+  amountCents  Int
+  currency     String       @default("USD")
+  reason       String
+  status       RefundStatus @default(pending)
+  createdAt    DateTime     @default(now())
+  decidedAt    DateTime?
+  decidedById  String?
+  decidedBy    User?        @relation("RefundDecidedBy", fields: [decidedById], references: [id])
+}
+
+// Append-only audit trail. Every state-changing action across all tools
+// is recorded here via the shared auditedAction() helper.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  actor      User     @relation("AuditActor", fields: [actorId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  before     String? // JSON snapshot before the change
+  after      String? // JSON snapshot after the change
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}
